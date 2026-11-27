@@ -1,0 +1,82 @@
+---
+- name: Install and Configure Harbor Registry
+  hosts: webservers
+  become: yes
+
+  vars_prompt:
+    - name: harbor_admin_password
+      prompt: "Enter Harbor admin password"
+      private: yes
+      confirm: yes
+
+    - name: harbor_db_password
+      prompt: "Enter Harbor database password"
+      private: yes
+      confirm: yes
+
+  tasks:
+
+    - name: Install required packages
+      apt:
+        name:
+          - curl
+          - openssl
+          - tar
+        state: present
+        update_cache: yes
+
+    - name: Check Docker Compose
+      command: docker compose version
+      changed_when: false
+
+    - name: Create Harbor directory
+      file:
+        path: /opt/harbor
+        state: directory
+
+    - name: Download Harbor installer
+      get_url:
+        url: https://github.com/goharbor/harbor/releases/download/v2.16.0/harbor-online-installer-v2.16.0.tgz
+        dest: /tmp/harbor-installer.tgz
+
+    - name: Extract Harbor installer
+      unarchive:
+        src: /tmp/harbor-installer.tgz
+        dest: /opt
+        remote_src: yes
+
+    - name: Copy Harbor configuration
+      copy:
+        src: /opt/harbor/harbor.yml.tmpl
+        dest: /opt/harbor/harbor.yml
+        remote_src: yes
+
+    - name: Configure Harbor hostname
+      lineinfile:
+        path: /opt/harbor/harbor.yml
+        regexp: '^hostname:'
+        line: "hostname: {{ ansible_host }}"
+
+    - name: Configure Harbor admin password
+      lineinfile:
+        path: /opt/harbor/harbor.yml
+        regexp: '^harbor_admin_password:'
+        line: "harbor_admin_password: {{ harbor_admin_password }}"
+
+    - name: Configure database password
+      lineinfile:
+        path: /opt/harbor/harbor.yml
+        regexp: '^  password:'
+        line: "  password: {{ harbor_db_password }}"
+
+    - name: Set Harbor data directory
+      lineinfile:
+        path: /opt/harbor/harbor.yml
+        regexp: '^data_volume:'
+        line: 'data_volume: /data'
+
+    - name: Install and start Harbor
+      command: ./install.sh
+      args:
+        chdir: /opt/harbor
+        creates: /opt/harbor/docker-compose.yml
